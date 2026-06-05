@@ -4,6 +4,8 @@ import { InstrumentView } from "./components/InstrumentView";
 import { GroupView } from "./components/GroupView";
 import { AnalysisView } from "./components/AnalysisView";
 import { TargetsView } from "./components/TargetsView";
+import { StatusBar } from "./components/StatusBar";
+import { ConnectionBanner } from "./components/ConnectionBanner";
 
 type Tab = "portfolio" | "instruments" | "groups" | "analysis" | "targets";
 
@@ -32,7 +34,9 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <StatusBar />
       </header>
+      <ConnectionBanner />
       <main className="content">
         {tab === "portfolio" && <PortfolioView />}
         {tab === "instruments" && <InstrumentView />}

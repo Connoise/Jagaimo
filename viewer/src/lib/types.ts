@@ -95,6 +95,32 @@ export interface PriceTarget {
   created_at: string;
 }
 
+export interface InstrumentPref {
+  instrument_id: number;
+  hidden: boolean;
+  alias: string | null;
+  pinned: boolean;
+  exclude_from_networth: boolean;
+  updated_at: string;
+}
+
+export type RequestKind = "equity" | "token";
+export type RequestStatus = "pending" | "resolved" | "error";
+
+export interface WatchlistRequest {
+  request_id: number;
+  kind: RequestKind;
+  symbol: string | null;
+  chain: string | null;
+  address: string | null;
+  note: string | null;
+  status: RequestStatus;
+  detail: string | null;
+  instrument_id: number | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 /** Coerce a PostgREST numeric (string) or number to a JS number. */
 export function num(v: string | number | null | undefined): number {
   if (v === null || v === undefined) return NaN;

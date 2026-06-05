@@ -127,6 +127,48 @@ CREATE TABLE IF NOT EXISTS tracking.price_targets (
     CONSTRAINT price_targets_direction_chk CHECK (direction IN ('above', 'below'))
 );
 
+-- Browser-submitted requests to start tracking a NEW instrument the system has
+-- not seen yet (a stock ticker, or a token by contract address). The browser
+-- cannot write `instruments` directly (RLS), so it enqueues a request here; the
+-- ingester resolves each one into an instrument + watchlist entry on its next
+-- run, then marks it resolved/error. Keeps the access model intact.
+CREATE TABLE IF NOT EXISTS tracking.watchlist_requests (
+    request_id    BIGSERIAL PRIMARY KEY,
+    kind          TEXT NOT NULL,            -- 'equity' | 'token'
+    symbol        TEXT,                     -- ticker (equity) / display symbol (token)
+    chain         TEXT,                     -- token chain (default 'base')
+    address       TEXT,                     -- token contract address
+    note          TEXT,
+    status        TEXT NOT NULL DEFAULT 'pending', -- 'pending'|'resolved'|'error'
+    detail        TEXT,                     -- resolution note / error message
+    instrument_id BIGINT REFERENCES tracking.instruments(instrument_id),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at   TIMESTAMPTZ,
+    CONSTRAINT watchlist_requests_kind_chk CHECK (kind IN ('equity', 'token')),
+    CONSTRAINT watchlist_requests_status_chk
+        CHECK (status IN ('pending', 'resolved', 'error'))
+);
+CREATE INDEX IF NOT EXISTS watchlist_requests_pending_idx
+    ON tracking.watchlist_requests (status) WHERE status = 'pending';
+
+-- User curation overlay for instruments. The browser may NOT write the
+-- canonical instruments dimension (it is the ingester-owned join hub), so
+-- display/behavior overrides live here and are LEFT JOINed at read time:
+--   hidden                -> declutter spam/dust from tables & pickers (display)
+--   alias                 -> user display-name override
+--   pinned                -> float to the top of lists
+--   exclude_from_networth -> the ingester drops it from the net_worth rollup,
+--                            but still records the holding (treat as dust)
+CREATE TABLE IF NOT EXISTS tracking.instrument_prefs (
+    instrument_id         BIGINT PRIMARY KEY
+        REFERENCES tracking.instruments(instrument_id),
+    hidden                BOOLEAN NOT NULL DEFAULT false,
+    alias                 TEXT,
+    pinned                BOOLEAN NOT NULL DEFAULT false,
+    exclude_from_networth BOOLEAN NOT NULL DEFAULT false,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ── Alerter state ────────────────────────────────────────────────────────────
 
 -- Single-row state for the net-worth threshold alerter (decision §2.4).
@@ -166,10 +208,11 @@ DECLARE
     read_tables  TEXT[] := ARRAY[
         'instruments','holdings','net_worth','prices','ohlc_bars',
         'watchlist','instrument_groups','group_members','price_targets',
-        'alert_state'
+        'watchlist_requests','instrument_prefs','alert_state'
     ];
     write_tables TEXT[] := ARRAY[
-        'watchlist','instrument_groups','group_members','price_targets'
+        'watchlist','instrument_groups','group_members','price_targets',
+        'watchlist_requests','instrument_prefs'
     ];
     t TEXT;
 BEGIN

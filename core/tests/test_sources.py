@@ -196,6 +196,31 @@ def test_per_source_isolation(monkeypatch):
     assert status["wallet_01"].startswith("failed:")    # bad source recorded
 
 
+# ── Watchlist-request validators (pure) ──────────────────────────────────────
+
+
+def test_normalize_equity_symbol():
+    from watchlist_requests import normalize_equity_symbol
+
+    assert normalize_equity_symbol("nvda") == "NVDA"
+    assert normalize_equity_symbol("  brk.b ") == "BRK.B"
+    with pytest.raises(ValueError):
+        normalize_equity_symbol("")
+    with pytest.raises(ValueError):
+        normalize_equity_symbol("not a ticker!")
+
+
+def test_normalize_token_address():
+    from watchlist_requests import normalize_token_address
+
+    good = "0x" + "Ab" * 20
+    assert normalize_token_address(good) == good.lower()
+    with pytest.raises(ValueError):
+        normalize_token_address("0xnothex")
+    with pytest.raises(ValueError):
+        normalize_token_address("")
+
+
 # ── DB-gated: instrument round-trip is idempotent ────────────────────────────
 
 
@@ -205,4 +230,19 @@ def test_get_or_create_idempotent(db_conn):
     a = db.get_or_create_instrument(db_conn, asset_class="equity", symbol="ZZZT")
     b = db.get_or_create_instrument(db_conn, asset_class="equity", symbol="ZZZT")
     assert a == b
+    db_conn.rollback()
+
+
+def test_excluded_instrument_ids(db_conn):
+    from db import client as db
+
+    iid = db.get_or_create_instrument(db_conn, asset_class="equity", symbol="ZDUST")
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO tracking.instrument_prefs (instrument_id, "
+            "exclude_from_networth) VALUES (%s, true) "
+            "ON CONFLICT (instrument_id) DO UPDATE SET exclude_from_networth = true",
+            (iid,),
+        )
+    assert iid in db.get_excluded_instrument_ids(db_conn)
     db_conn.rollback()

@@ -262,6 +262,66 @@ def get_watchlist_instrument_ids(conn: psycopg.Connection) -> list[int]:
         return [int(r[0]) for r in cur.fetchall()]
 
 
+def add_to_watchlist(
+    conn: psycopg.Connection, instrument_id: int, note: str | None = None
+) -> None:
+    """Add an instrument to the watchlist (idempotent)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO tracking.watchlist (instrument_id, note) VALUES (%s, %s) "
+            "ON CONFLICT (instrument_id) DO NOTHING",
+            (instrument_id, note),
+        )
+
+
+@dataclass
+class WatchlistRequestRow:
+    request_id: int
+    kind: str
+    symbol: str | None
+    chain: str | None
+    address: str | None
+    note: str | None
+
+
+def get_pending_watchlist_requests(
+    conn: psycopg.Connection,
+) -> list[WatchlistRequestRow]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT request_id, kind, symbol, chain, address, note "
+            "FROM tracking.watchlist_requests WHERE status = 'pending' "
+            "ORDER BY created_at"
+        )
+        return [WatchlistRequestRow(*r) for r in cur.fetchall()]
+
+
+def resolve_watchlist_request(
+    conn: psycopg.Connection,
+    request_id: int,
+    *,
+    status: str,
+    detail: str | None = None,
+    instrument_id: int | None = None,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE tracking.watchlist_requests SET status = %s, detail = %s, "
+            "instrument_id = %s, resolved_at = now() WHERE request_id = %s",
+            (status, detail, instrument_id, request_id),
+        )
+
+
+def get_excluded_instrument_ids(conn: psycopg.Connection) -> set[int]:
+    """Instruments the user flagged as dust (exclude_from_networth)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT instrument_id FROM tracking.instrument_prefs "
+            "WHERE exclude_from_networth = true"
+        )
+        return {int(r[0]) for r in cur.fetchall()}
+
+
 def get_tracked_instrument_ids(conn: psycopg.Connection) -> list[int]:
     """Instruments to maintain OHLC for: latest-snapshot holdings ∪ watchlist."""
     with conn.cursor() as cur:

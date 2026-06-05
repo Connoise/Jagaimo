@@ -231,7 +231,13 @@ def compute_rollup(conn, holdings, mapping, snapshot_ts) -> tuple[Decimal, bool]
     by_source: dict[str, Decimal] = {}
     by_asset: dict[str, Decimal] = {}
     any_problem = False
+    # Honor the user's "treat as dust" curation: excluded instruments are still
+    # recorded in holdings, but dropped from the net_worth rollup (and from the
+    # problem flag — dust shouldn't raise a data-issue alarm).
+    excluded = db.get_excluded_instrument_ids(conn)
     for h in holdings:
+        if mapping[id(h)] in excluded:
+            continue
         if (h.price_status or config.PRICE_UNPRICED) in config.PROBLEM_STATUSES:
             any_problem = True
         v = _value(h)
@@ -267,6 +273,18 @@ def run(settings: config.Config | None = None) -> RunResult:
 
     with db.connection() as conn:
         db.seed_instruments(conn)  # cheap, idempotent — guarantees day-one pricing
+
+        # Drain user "add stock/token" requests into instruments + watchlist so
+        # newly-added instruments are priced and backfilled this same run.
+        from watchlist_requests import process_watchlist_requests
+
+        try:
+            n = process_watchlist_requests(conn, settings)
+            if n:
+                log.info("resolved %d watchlist request(s)", n)
+        except Exception:
+            log.exception("watchlist request processing failed — continuing")
+
         mapping = resolve_instruments(conn, holdings)
         price_crypto(holdings, settings)
 
