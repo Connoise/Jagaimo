@@ -79,6 +79,12 @@ Set `JAGAIMO_LOG_JSON=true` for one-line JSON logs.
   (`live | last_close | stale_unlisted | unpriced`); only the last two are
   "problems" that set `any_problem` and drive alerts.
 - **Timestamps are UTC** everywhere; local conversion happens only in the viewer.
+- **Adding instruments:** the viewer enqueues new stocks/tokens in
+  `tracking.watchlist_requests` (it can't write `instruments` under RLS). Each
+  run, `watchlist_requests.process_watchlist_requests` validates the input,
+  `get_or_create`s the instrument, adds it to the watchlist, and marks the
+  request `resolved`/`error` — so a new instrument is priced and backfilled the
+  same run it's added.
 
 ## Live verification checklist
 

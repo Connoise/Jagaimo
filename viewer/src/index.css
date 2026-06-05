@@ -70,6 +70,32 @@ body {
   font-weight: 600;
 }
 
+.statusbar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+}
+
+.status-stale {
+  color: var(--warn);
+}
+
+.banner {
+  background: #3a2a0a;
+  color: var(--warn);
+  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 1.25rem;
+  font-size: 0.88rem;
+}
+
+.banner code {
+  background: #00000033;
+  padding: 0 0.25rem;
+  border-radius: 4px;
+}
+
 .content {
   padding: 1.25rem;
   max-width: 1200px;

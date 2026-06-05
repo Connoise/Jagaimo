@@ -6,6 +6,7 @@ import { OverlayChart } from "./OverlayChart";
 import { InstrumentPicker } from "./InstrumentPicker";
 import { TimeframeSwitcher } from "./TimeframeSwitcher";
 import { WatchlistManager } from "./WatchlistManager";
+import { AddInstrument } from "./AddInstrument";
 
 /** Instrument path: timeframe (F1), candlesticks (F4), overlays (F5), watchlist. */
 export function InstrumentView() {
@@ -109,6 +110,7 @@ export function InstrumentView() {
         ) : null}
       </div>
 
+      <AddInstrument />
       <WatchlistManager />
     </div>
   );

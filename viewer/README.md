@@ -12,7 +12,7 @@ user-config tables (`watchlist`, `instrument_groups`, `group_members`,
 | View | Features |
 |------|----------|
 | **Portfolio** | Net-worth line/candlesticks, timeframe switcher (F1), click-to-pin point-in-time (F2/F3), by-source & by-asset-class breakdown, holdings table with `price_status` labeling (V1/V2/V3/V4) |
-| **Instruments** | Per-instrument line/candlesticks from `prices`/`ohlc_bars`, multi-instrument normalized overlay (F5), watchlist CRUD (adds begin pricing next run) |
+| **Instruments** | Per-instrument line/candlesticks from `prices`/`ohlc_bars`, multi-instrument normalized overlay (F5), watchlist CRUD, **add a new stock (ticker) or token (contract address)** to tracking |
 | **Groups** | Weighted baskets as a single series — absolute or indexed (F6) |
 | **Analysis** | Rate of change, rolling volatility, max drawdown, returns histogram (F7) — descriptive only, no predictions |
 | **Targets** | Price-target CRUD + live distance-to-target (F8); evaluation/alerts run server-side in the core |
@@ -22,6 +22,20 @@ user-config tables (`watchlist`, `instrument_groups`, `group_members`,
 Vite + React + TypeScript · `@supabase/supabase-js` (scoped to the `tracking`
 schema) · `@tanstack/react-query` · `lightweight-charts` (time-series &
 candlesticks) · `recharts` (analysis charts).
+
+The top bar shows a last-updated indicator (with a staleness warning if the
+ingester appears to have stopped) and a manual refresh. A setup banner appears
+if the Supabase env vars are missing.
+
+### Adding instruments
+
+Holdings are read-only — derived from your real Alpaca/wallet balances. To
+**track a new stock or token** the system hasn't seen, the Instruments tab
+enqueues a row in `tracking.watchlist_requests` (the browser can't write
+`instruments` directly under RLS). The ingester resolves each request into an
+instrument + watchlist entry on its next run, so it's priced and charted from
+then on — and shows up in holdings automatically if a connected source ever
+holds it.
 
 ## Setup
 

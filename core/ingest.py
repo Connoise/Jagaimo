@@ -267,6 +267,18 @@ def run(settings: config.Config | None = None) -> RunResult:
 
     with db.connection() as conn:
         db.seed_instruments(conn)  # cheap, idempotent — guarantees day-one pricing
+
+        # Drain user "add stock/token" requests into instruments + watchlist so
+        # newly-added instruments are priced and backfilled this same run.
+        from watchlist_requests import process_watchlist_requests
+
+        try:
+            n = process_watchlist_requests(conn, settings)
+            if n:
+                log.info("resolved %d watchlist request(s)", n)
+        except Exception:
+            log.exception("watchlist request processing failed — continuing")
+
         mapping = resolve_instruments(conn, holdings)
         price_crypto(holdings, settings)
 

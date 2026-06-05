@@ -196,6 +196,31 @@ def test_per_source_isolation(monkeypatch):
     assert status["wallet_01"].startswith("failed:")    # bad source recorded
 
 
+# ── Watchlist-request validators (pure) ──────────────────────────────────────
+
+
+def test_normalize_equity_symbol():
+    from watchlist_requests import normalize_equity_symbol
+
+    assert normalize_equity_symbol("nvda") == "NVDA"
+    assert normalize_equity_symbol("  brk.b ") == "BRK.B"
+    with pytest.raises(ValueError):
+        normalize_equity_symbol("")
+    with pytest.raises(ValueError):
+        normalize_equity_symbol("not a ticker!")
+
+
+def test_normalize_token_address():
+    from watchlist_requests import normalize_token_address
+
+    good = "0x" + "Ab" * 20
+    assert normalize_token_address(good) == good.lower()
+    with pytest.raises(ValueError):
+        normalize_token_address("0xnothex")
+    with pytest.raises(ValueError):
+        normalize_token_address("")
+
+
 # ── DB-gated: instrument round-trip is idempotent ────────────────────────────
 
 
