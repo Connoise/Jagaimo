@@ -231,7 +231,13 @@ def compute_rollup(conn, holdings, mapping, snapshot_ts) -> tuple[Decimal, bool]
     by_source: dict[str, Decimal] = {}
     by_asset: dict[str, Decimal] = {}
     any_problem = False
+    # Honor the user's "treat as dust" curation: excluded instruments are still
+    # recorded in holdings, but dropped from the net_worth rollup (and from the
+    # problem flag — dust shouldn't raise a data-issue alarm).
+    excluded = db.get_excluded_instrument_ids(conn)
     for h in holdings:
+        if mapping[id(h)] in excluded:
+            continue
         if (h.price_status or config.PRICE_UNPRICED) in config.PROBLEM_STATUSES:
             any_problem = True
         v = _value(h)

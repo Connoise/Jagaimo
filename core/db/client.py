@@ -312,6 +312,16 @@ def resolve_watchlist_request(
         )
 
 
+def get_excluded_instrument_ids(conn: psycopg.Connection) -> set[int]:
+    """Instruments the user flagged as dust (exclude_from_networth)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT instrument_id FROM tracking.instrument_prefs "
+            "WHERE exclude_from_networth = true"
+        )
+        return {int(r[0]) for r in cur.fetchall()}
+
+
 def get_tracked_instrument_ids(conn: psycopg.Connection) -> list[int]:
     """Instruments to maintain OHLC for: latest-snapshot holdings ∪ watchlist."""
     with conn.cursor() as cur:

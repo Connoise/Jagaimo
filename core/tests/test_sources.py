@@ -231,3 +231,18 @@ def test_get_or_create_idempotent(db_conn):
     b = db.get_or_create_instrument(db_conn, asset_class="equity", symbol="ZZZT")
     assert a == b
     db_conn.rollback()
+
+
+def test_excluded_instrument_ids(db_conn):
+    from db import client as db
+
+    iid = db.get_or_create_instrument(db_conn, asset_class="equity", symbol="ZDUST")
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO tracking.instrument_prefs (instrument_id, "
+            "exclude_from_networth) VALUES (%s, true) "
+            "ON CONFLICT (instrument_id) DO UPDATE SET exclude_from_networth = true",
+            (iid,),
+        )
+    assert iid in db.get_excluded_instrument_ids(db_conn)
+    db_conn.rollback()

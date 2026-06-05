@@ -6,7 +6,7 @@ import {
 } from "../hooks/useTargets";
 import { useLatestPrices } from "../hooks/usePrices";
 import { useInstrumentMap } from "../hooks/useInstruments";
-import { num, type TargetDirection } from "../lib/types";
+import { num, type PriceTarget, type TargetDirection } from "../lib/types";
 import { formatPct, formatPrice } from "../lib/format";
 import { InstrumentPicker } from "./InstrumentPicker";
 
@@ -16,41 +16,68 @@ const STATE_PILL: Record<string, string> = {
   hit: "pill pill-warn",
 };
 
-/** F8 — price-target CRUD + live distance-to-target. Evaluation runs server-side. */
+interface FormState {
+  instrument_id: number | null;
+  target_usd: string;
+  direction: TargetDirection;
+  near_pct: string;
+  label: string;
+}
+
+const EMPTY: FormState = {
+  instrument_id: null,
+  target_usd: "",
+  direction: "above",
+  near_pct: "2",
+  label: "",
+};
+
+/** F8 — price-target CRUD (create + edit) + live distance-to-target. */
 export function TargetsView() {
-  const { data: targets, create, setActive, remove } = useTargets();
+  const { data: targets, create, update, setActive, remove } = useTargets();
   const { data: latest } = useLatestPrices();
   const { data: instruments, map } = useInstrumentMap();
 
-  const [form, setForm] = useState<{
-    instrument_id: number | null;
-    target_usd: string;
-    direction: TargetDirection;
-    near_pct: string;
-    label: string;
-  }>({
-    instrument_id: null,
-    target_usd: "",
-    direction: "above",
-    near_pct: "2",
-    label: "",
-  });
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY);
 
-  const canSubmit =
-    form.instrument_id != null && Number(form.target_usd) > 0;
+  const canSubmit = form.instrument_id != null && Number(form.target_usd) > 0;
+
+  const beginEdit = (t: PriceTarget) => {
+    setEditingId(t.target_id);
+    setForm({
+      instrument_id: t.instrument_id,
+      target_usd: String(num(t.target_usd)),
+      direction: t.direction,
+      near_pct: String(num(t.near_pct)),
+      label: t.label ?? "",
+    });
+  };
+
+  const reset = () => {
+    setEditingId(null);
+    setForm(EMPTY);
+  };
 
   const submit = () => {
     if (!canSubmit) return;
-    const t: NewTarget = {
+    const payload: NewTarget = {
       instrument_id: form.instrument_id!,
       target_usd: Number(form.target_usd),
       direction: form.direction,
       near_pct: Number(form.near_pct) || 2,
       label: form.label.trim() || undefined,
     };
-    create.mutate(t);
-    setForm((f) => ({ ...f, target_usd: "", label: "" }));
+    if (editingId != null) {
+      update.mutate({ target_id: editingId, ...payload }, { onSuccess: reset });
+    } else {
+      create.mutate(payload, {
+        onSuccess: () => setForm((f) => ({ ...f, target_usd: "", label: "" })),
+      });
+    }
   };
+
+  const mutError = create.error || update.error;
 
   return (
     <div className="stack">
@@ -105,12 +132,15 @@ export function TargetsView() {
             onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
           />
           <button className="btn" disabled={!canSubmit} onClick={submit}>
-            Add target
+            {editingId != null ? "Save changes" : "Add target"}
           </button>
+          {editingId != null && (
+            <button className="btn-sm" onClick={reset}>
+              cancel
+            </button>
+          )}
         </div>
-        {create.isError && (
-          <p className="error">Create failed: {String(create.error)}</p>
-        )}
+        {mutError && <p className="error">Failed: {String(mutError)}</p>}
       </div>
 
       <div className="card">
@@ -138,7 +168,13 @@ export function TargetsView() {
               const dist =
                 price != null ? distanceToTargetPct(price, target) : NaN;
               return (
-                <tr key={t.target_id} className={t.active ? "" : "row-muted"}>
+                <tr
+                  key={t.target_id}
+                  className={
+                    (t.active ? "" : "row-muted") +
+                    (editingId === t.target_id ? " row-editing" : "")
+                  }
+                >
                   <td>
                     <strong>{map.get(t.instrument_id)?.symbol ?? t.instrument_id}</strong>
                   </td>
@@ -155,6 +191,9 @@ export function TargetsView() {
                   </td>
                   <td className="muted">{t.label ?? "—"}</td>
                   <td className="num nowrap">
+                    <button className="btn-sm" onClick={() => beginEdit(t)}>
+                      edit
+                    </button>{" "}
                     <button
                       className="btn-sm"
                       onClick={() =>

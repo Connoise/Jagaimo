@@ -314,6 +314,11 @@ body {
   opacity: 0.5;
 }
 
+.row-editing {
+  outline: 1px solid var(--info);
+  background: #0d253822;
+}
+
 /* Pills */
 .pill {
   display: inline-block;

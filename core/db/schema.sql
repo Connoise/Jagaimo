@@ -151,6 +151,24 @@ CREATE TABLE IF NOT EXISTS tracking.watchlist_requests (
 CREATE INDEX IF NOT EXISTS watchlist_requests_pending_idx
     ON tracking.watchlist_requests (status) WHERE status = 'pending';
 
+-- User curation overlay for instruments. The browser may NOT write the
+-- canonical instruments dimension (it is the ingester-owned join hub), so
+-- display/behavior overrides live here and are LEFT JOINed at read time:
+--   hidden                -> declutter spam/dust from tables & pickers (display)
+--   alias                 -> user display-name override
+--   pinned                -> float to the top of lists
+--   exclude_from_networth -> the ingester drops it from the net_worth rollup,
+--                            but still records the holding (treat as dust)
+CREATE TABLE IF NOT EXISTS tracking.instrument_prefs (
+    instrument_id         BIGINT PRIMARY KEY
+        REFERENCES tracking.instruments(instrument_id),
+    hidden                BOOLEAN NOT NULL DEFAULT false,
+    alias                 TEXT,
+    pinned                BOOLEAN NOT NULL DEFAULT false,
+    exclude_from_networth BOOLEAN NOT NULL DEFAULT false,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ── Alerter state ────────────────────────────────────────────────────────────
 
 -- Single-row state for the net-worth threshold alerter (decision §2.4).
@@ -190,11 +208,11 @@ DECLARE
     read_tables  TEXT[] := ARRAY[
         'instruments','holdings','net_worth','prices','ohlc_bars',
         'watchlist','instrument_groups','group_members','price_targets',
-        'watchlist_requests','alert_state'
+        'watchlist_requests','instrument_prefs','alert_state'
     ];
     write_tables TEXT[] := ARRAY[
         'watchlist','instrument_groups','group_members','price_targets',
-        'watchlist_requests'
+        'watchlist_requests','instrument_prefs'
     ];
     t TEXT;
 BEGIN

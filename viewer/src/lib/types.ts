@@ -95,6 +95,15 @@ export interface PriceTarget {
   created_at: string;
 }
 
+export interface InstrumentPref {
+  instrument_id: number;
+  hidden: boolean;
+  alias: string | null;
+  pinned: boolean;
+  exclude_from_networth: boolean;
+  updated_at: string;
+}
+
 export type RequestKind = "equity" | "token";
 export type RequestStatus = "pending" | "resolved" | "error";
 
