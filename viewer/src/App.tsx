@@ -1,20 +1,45 @@
-import { NetWorthChart } from "./components/NetWorthChart";
+import { useState } from "react";
+import { PortfolioView } from "./components/PortfolioView";
+import { InstrumentView } from "./components/InstrumentView";
+import { GroupView } from "./components/GroupView";
+import { AnalysisView } from "./components/AnalysisView";
+import { TargetsView } from "./components/TargetsView";
+
+type Tab = "portfolio" | "instruments" | "groups" | "analysis" | "targets";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "portfolio", label: "Portfolio" },
+  { id: "instruments", label: "Instruments" },
+  { id: "groups", label: "Groups" },
+  { id: "analysis", label: "Analysis" },
+  { id: "targets", label: "Targets" },
+];
 
 export default function App() {
+  const [tab, setTab] = useState<Tab>("portfolio");
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        background: "#0d1117",
-        color: "#c9d1d9",
-        minHeight: "100vh",
-        margin: 0,
-        padding: "1.5rem",
-        boxSizing: "border-box",
-      }}
-    >
-      <h1 style={{ marginTop: 0 }}>🥔 Jagaimo</h1>
-      <NetWorthChart />
-    </main>
+    <div className="app">
+      <header className="topbar">
+        <h1 className="brand">🥔 Jagaimo</h1>
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={tab === t.id ? "tab active" : "tab"}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+      <main className="content">
+        {tab === "portfolio" && <PortfolioView />}
+        {tab === "instruments" && <InstrumentView />}
+        {tab === "groups" && <GroupView />}
+        {tab === "analysis" && <AnalysisView />}
+        {tab === "targets" && <TargetsView />}
+      </main>
+    </div>
   );
 }

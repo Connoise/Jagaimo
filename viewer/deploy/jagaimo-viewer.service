@@ -1,0 +1,24 @@
+# systemd unit: serve the built viewer with Caddy, bound to the tailnet (V9).
+# Install:
+#   sudo cp deploy/jagaimo-viewer.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now jagaimo-viewer
+# Rebuild + redeploy on changes:
+#   npm run build && sudo systemctl restart jagaimo-viewer
+
+[Unit]
+Description=Jagaimo viewer (static site via Caddy, tailnet-only)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/caddy run --config /opt/jagaimo/viewer/deploy/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=3
+# Run as an unprivileged service account that can read /opt/jagaimo/viewer/dist.
+User=jagaimo
+Group=jagaimo
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

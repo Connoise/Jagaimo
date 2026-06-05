@@ -14,4 +14,20 @@ export default defineConfig({
     host: true,
     port: 4173,
   },
+  build: {
+    // Recharts/React share a dependency graph, so splitting React out creates a
+    // circular chunk. Keep the React ecosystem together; split only the
+    // independent heavy vendors (charts, supabase) for cacheability.
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("lightweight-charts")) return "charts";
+          if (id.includes("@supabase")) return "supabase";
+          return "vendor";
+        },
+      },
+    },
+  },
 });
