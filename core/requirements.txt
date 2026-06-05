@@ -1,0 +1,20 @@
+# Jagaimo — Phase 0 data core
+# Pinned to compatible ranges; read-only tracker, no trading deps.
+
+# Config / env
+python-dotenv>=1.0,<2.0
+
+# Postgres (Supabase) — psycopg 3
+psycopg[binary]>=3.1,<4.0
+
+# HTTP (CoinGecko, GeckoTerminal, Alchemy JSON-RPC, Telegram)
+requests>=2.31,<3.0
+
+# EVM fallback path (public RPC + balanceOf)
+web3>=6.15,<8.0
+
+# Equities source (read-only positions + clock/calendar)
+alpaca-py>=0.21,<0.40
+
+# Tests
+pytest>=8.0,<9.0

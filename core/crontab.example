@@ -1,0 +1,3 @@
+# Jagaimo ingester — every 15 minutes (plan §8). Install with `crontab -e`.
+# One idempotent entrypoint; output appended to ingest.log.
+*/15 * * * * cd /path/to/asset-tracker/core && .venv/bin/python ingest.py >> ingest.log 2>&1
