@@ -3,9 +3,10 @@
 Interactive front-end for the Phase 0 tracker. Reads/writes the self-hosted
 Supabase Postgres (the `tracking` schema) over the tailnet via PostgREST. No
 app-level auth — access control is the tailnet ACL (decision §2.11). The anon
-key is RLS-constrained: it reads everything but writes only the four
-user-config tables (`watchlist`, `instrument_groups`, `group_members`,
-`price_targets`).
+key is RLS-constrained: it reads everything but writes only the user-config
+tables (`watchlist`, `instrument_groups`, `group_members`, `price_targets`,
+`watchlist_requests`, `instrument_prefs`); data tables — including the
+`transactions` ledger — are read-only in the browser.
 
 ## Features (F1–F8 / V1–V9)
 
@@ -15,6 +16,7 @@ user-config tables (`watchlist`, `instrument_groups`, `group_members`,
 | **Instruments** | Per-instrument line/candlesticks from `prices`/`ohlc_bars`, multi-instrument normalized overlay (F5), watchlist CRUD, **add a new stock/token** to tracking, **curate tracked instruments** (alias / hide / pin / exclude-from-net-worth) |
 | **Groups** | Weighted baskets as a single series — absolute or indexed (F6) |
 | **Analysis** | Rate of change, rolling volatility, max drawdown, returns histogram (F7) — descriptive only, no predictions |
+| **Ledger** | Read-only trade ledger: trades & cash events imported by the core (Vanguard CSV transaction sections, Coinbase fills) with source/side/symbol filters and buy/sell/fee totals. Append-only and de-duplicated server-side; holdings snapshots stay authoritative for "now" |
 | **Targets** | Price-target CRUD + live distance-to-target (F8); evaluation/alerts run server-side in the core |
 
 ## Stack

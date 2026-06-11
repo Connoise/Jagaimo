@@ -253,6 +253,52 @@ def upsert_ohlc_bars(conn: psycopg.Connection, rows: Iterable[dict[str, Any]]) -
     return len(rows)
 
 
+# ── Trade ledger ─────────────────────────────────────────────────────────────
+
+
+def insert_transactions(
+    conn: psycopg.Connection, rows: Iterable[dict[str, Any]]
+) -> int:
+    """Append ledger rows, skipping any whose natural_key already exists.
+
+    Returns the number actually inserted (psycopg reports the cumulative
+    rowcount across an executemany, and ON CONFLICT DO NOTHING rows don't
+    count), so re-importing an overlapping export reports 0 new rows.
+    """
+    rows = list(rows)
+    if not rows:
+        return 0
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO tracking.transactions
+                (source, account, instrument_id, symbol, trade_ts, settlement_ts,
+                 side, kind, quantity, price_usd, fees_usd, amount_usd,
+                 description, natural_key)
+            VALUES (%(source)s, %(account)s, %(instrument_id)s, %(symbol)s,
+                    %(trade_ts)s, %(settlement_ts)s, %(side)s, %(kind)s,
+                    %(quantity)s, %(price_usd)s, %(fees_usd)s, %(amount_usd)s,
+                    %(description)s, %(natural_key)s)
+            ON CONFLICT (natural_key) DO NOTHING
+            """,
+            rows,
+        )
+        return max(cur.rowcount, 0)
+
+
+def latest_transaction_ts(
+    conn: psycopg.Connection, source: str
+) -> datetime | None:
+    """Most recent trade_ts for a source — incremental-sync cursor for APIs."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT max(trade_ts) FROM tracking.transactions WHERE source = %s",
+            (source,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 # ── Reads used by orchestrator / alerters ────────────────────────────────────
 
 

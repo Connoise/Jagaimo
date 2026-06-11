@@ -5,6 +5,7 @@ export type PriceStatus = "live" | "last_close" | "stale_unlisted" | "unpriced";
 export type AssetClass =
   | "equity"
   | "etf"
+  | "fund"
   | "crypto_spot"
   | "crypto_lp"
   | "cash";
@@ -119,6 +120,27 @@ export interface WatchlistRequest {
   instrument_id: number | null;
   created_at: string;
   resolved_at: string | null;
+}
+
+export type TxnSide = "buy" | "sell" | "income" | "other";
+
+/** Trade-ledger row (ingester-written; the browser only reads it). */
+export interface TransactionRow {
+  txn_id: number;
+  source: string;
+  account: string | null;
+  instrument_id: number | null;
+  symbol: string | null;
+  trade_ts: string;
+  settlement_ts: string | null;
+  side: TxnSide;
+  kind: string | null;
+  quantity: string | number | null;
+  price_usd: string | number | null;
+  fees_usd: string | number | null;
+  amount_usd: string | number | null;
+  description: string | null;
+  created_at: string;
 }
 
 /** Coerce a PostgREST numeric (string) or number to a JS number. */

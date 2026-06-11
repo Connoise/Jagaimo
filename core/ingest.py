@@ -4,11 +4,12 @@ One idempotent run (plan §8):
   1. snapshot_ts = now() (UTC) for the whole run.
   2. collect holdings from every enabled source (per-source isolation).
   3. get_or_create instruments; price crypto via CoinGecko (equities arrive
-     pre-priced from Alpaca).
+     pre-priced from Alpaca; Vanguard-CSV equities re-priced via Alpaca data).
   4. write holdings; price the tracked set (held ∪ watchlist) into `prices`.
   5. compute + write the net_worth rollup.
-  6. evaluate price targets + the net-worth threshold alert (D6).
-  7. maintain OHLC bars for held ∪ watchlist (D7).
+  6. sync the trade ledger (Vanguard CSV transactions + Coinbase fills).
+  7. evaluate price targets + the net-worth threshold alert (D6).
+  8. maintain OHLC bars for held ∪ watchlist (D7).
 
 A failure in one source must never abort the others. Exit non-zero only on a
 hard failure (e.g. DB unreachable) so cron surfaces it.
@@ -51,13 +52,19 @@ class RunResult:
 
 def collect_holdings(settings: config.Config) -> tuple[list[Holding], dict[str, str]]:
     from sources.alpaca_source import build_alpaca_source
+    from sources.coinbase_source import build_coinbase_source
     from sources.evm_source import build_evm_sources
+    from sources.vanguard_csv import build_vanguard_source
 
     sources: list[Any] = []
     alpaca = build_alpaca_source(settings)
     if alpaca is not None:
         sources.append(alpaca)
     sources.extend(build_evm_sources(settings))
+    for builder in (build_vanguard_source, build_coinbase_source):
+        src = builder(settings)
+        if src is not None:
+            sources.append(src)
 
     holdings: list[Holding] = []
     status: dict[str, str] = {}
@@ -132,6 +139,33 @@ def price_crypto(holdings: list[Holding], settings: config.Config) -> None:
         else:
             # Known token but no live quote available.
             h.price_status = config.PRICE_STALE_UNLISTED
+
+
+def reprice_csv_equities(holdings: list[Holding], settings: config.Config) -> None:
+    """Refresh CSV-sourced equity/ETF prices via Alpaca market data.
+
+    Vanguard CSV prices age between manual exports; any symbol Alpaca can quote
+    gets a live/last_close price each run (which also clears a stale flag).
+    Mutual funds have no Alpaca quotes and keep the exported NAV. Best-effort:
+    no Alpaca creds → CSV prices stand.
+    """
+    from sources.alpaca_source import build_alpaca_source
+
+    symbols = sorted({
+        h.symbol for h in holdings
+        if h.source == config.SOURCE_VANGUARD and h.asset_class in ("equity", "etf")
+    })
+    if not symbols:
+        return
+    alpaca = build_alpaca_source(settings)
+    if alpaca is None:
+        return
+    quotes = alpaca.latest_prices(symbols)  # never raises; omits misses
+    as_of = now_utc()
+    for h in holdings:
+        if h.source == config.SOURCE_VANGUARD and h.symbol in quotes:
+            h.price_usd, h.price_status = quotes[h.symbol]
+            h.price_as_of = as_of
 
 
 def _value(h: Holding) -> Decimal | None:
@@ -287,6 +321,7 @@ def run(settings: config.Config | None = None) -> RunResult:
 
         mapping = resolve_instruments(conn, holdings)
         price_crypto(holdings, settings)
+        reprice_csv_equities(holdings, settings)
 
         result.holdings_written = write_holdings(conn, holdings, mapping, snapshot_ts)
         result.prices_written = write_tracked_prices(
@@ -295,6 +330,17 @@ def run(settings: config.Config | None = None) -> RunResult:
         total, any_problem = compute_rollup(conn, holdings, mapping, snapshot_ts)
         result.total_usd = total
         result.any_problem = any_problem
+
+        # Trade ledger: Vanguard CSV transaction sections + Coinbase fills.
+        # Append-only with natural-key dedup; isolated like everything else.
+        try:
+            from ledger import sync_ledger
+
+            counts = sync_ledger(conn, settings)
+            if any(counts.values()):
+                log.info("ledger: imported %s", counts)
+        except Exception:
+            log.exception("ledger sync failed — continuing")
 
         # D6 — alerts (targets + net-worth threshold). Imported lazily so the
         # orchestrator stays importable even mid-build.
