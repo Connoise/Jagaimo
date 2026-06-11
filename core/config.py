@@ -82,10 +82,17 @@ NETWORTH_ALERT_COOLDOWN_MIN = _env_int("NETWORTH_ALERT_COOLDOWN_MIN", 60)
 # last_state transition; this only damps flapping around a band edge.
 TARGET_ALERT_COOLDOWN_MIN = _env_int("TARGET_ALERT_COOLDOWN_MIN", 60)
 
-# Source keys (also used as `holdings.source`).
+# Source keys (also used as `holdings.source` / `transactions.source`).
 SOURCE_ALPACA = "alpaca"
 SOURCE_WALLET_STANDARD = "wallet_standard"
 SOURCE_WALLET_01 = "wallet_01"
+SOURCE_VANGUARD = "vanguard"
+SOURCE_COINBASE = "coinbase"
+
+# A Vanguard CSV export older than this many days flags its fund/unquoted rows
+# `stale_unlisted` so the issues indicator nudges a re-export. Equity/ETF rows
+# are re-priced live via Alpaca each run and are unaffected.
+VANGUARD_CSV_STALE_DAYS = _env_int("VANGUARD_CSV_STALE_DAYS", 7)
 
 # Price-status enum values (mirror tracking.price_status, decision §2.2).
 PRICE_LIVE = "live"
@@ -155,6 +162,56 @@ SEED_INSTRUMENTS: tuple[SeedInstrument, ...] = (
 # Pricing is always live; this only affects `is_stablecoin` defaulting / display.
 STABLECOIN_SYMBOLS = frozenset({"USDC", "USDT", "DAI", "USDBC", "USDS"})
 
+# Coinbase exchange balances are custodial (no contract address), so they are
+# priced by CoinGecko **id**. Built-in map for common listings; extend via the
+# COINBASE_COINGECKO_IDS env ("SYM:id,SYM:id"). Unknown symbols are recorded
+# but `stale_unlisted` until mapped — never fail the run.
+COINBASE_COINGECKO_IDS: dict[str, str] = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "SOL": "solana",
+    "XRP": "ripple",
+    "DOGE": "dogecoin",
+    "ADA": "cardano",
+    "AVAX": "avalanche-2",
+    "LINK": "chainlink",
+    "DOT": "polkadot",
+    "MATIC": "matic-network",
+    "POL": "polygon-ecosystem-token",
+    "LTC": "litecoin",
+    "BCH": "bitcoin-cash",
+    "UNI": "uniswap",
+    "AAVE": "aave",
+    "ATOM": "cosmos",
+    "ALGO": "algorand",
+    "XLM": "stellar",
+    "ETC": "ethereum-classic",
+    "NEAR": "near",
+    "OP": "optimism",
+    "ARB": "arbitrum",
+    "SUI": "sui",
+    "APT": "aptos",
+    "FIL": "filecoin",
+    "ICP": "internet-computer",
+    "HBAR": "hedera-hashgraph",
+    "GRT": "the-graph",
+    "LDO": "lido-dao",
+    "CRV": "curve-dao-token",
+    "COMP": "compound-governance-token",
+    "MKR": "maker",
+    "SHIB": "shiba-inu",
+    "PEPE": "pepe",
+    "TIA": "celestia",
+    "SEI": "sei-network",
+    "INJ": "injective-protocol",
+    "RNDR": "render-token",
+    "CBETH": "coinbase-wrapped-staked-eth",
+    "AERO": "aerodrome-finance",
+    "USDC": "usd-coin",
+    "USDT": "tether",
+    "DAI": "dai",
+}
+
 
 # ── Runtime configuration object ─────────────────────────────────────────────
 
@@ -175,6 +232,16 @@ class Config:
 
     wallet_standard_address: str | None = None
     wallet_01_address: str | None = None
+
+    # Vanguard is file-based (no public retail API): a directory of CSV exports
+    # (or a single file path) dropped in by the user.
+    vanguard_csv_path: str | None = None
+
+    # Coinbase CDP key: either the downloaded key json, or the name+secret pair.
+    coinbase_key_file: str | None = None
+    coinbase_api_key_name: str | None = None
+    coinbase_api_private_key: str | None = None
+    coinbase_coingecko_overrides: dict[str, str] = field(default_factory=dict)
 
     coingecko_api_key: str | None = None
     coingecko_pro: bool = False
@@ -198,6 +265,23 @@ class Config:
     @property
     def use_alchemy(self) -> bool:
         return bool(self.alchemy_api_key)
+
+    @property
+    def vanguard_enabled(self) -> bool:
+        return bool(self.vanguard_csv_path)
+
+    @property
+    def coinbase_enabled(self) -> bool:
+        return bool(
+            self.coinbase_key_file
+            or (self.coinbase_api_key_name and self.coinbase_api_private_key)
+        )
+
+    def coinbase_coingecko_id(self, symbol: str) -> str | None:
+        """CoinGecko id for a Coinbase asset symbol (env overrides win)."""
+        sym = symbol.upper()
+        return self.coinbase_coingecko_overrides.get(sym) or \
+            COINBASE_COINGECKO_IDS.get(sym)
 
     @property
     def telegram_enabled(self) -> bool:
@@ -246,9 +330,24 @@ class Config:
             )
         if not self.telegram_enabled:
             warnings.append("Telegram disabled — alerts will be logged only.")
-        if not (self.alpaca_enabled or self.evm_enabled):
+        if self.vanguard_enabled and not Path(self.vanguard_csv_path).exists():
+            warnings.append(
+                f"VANGUARD_CSV_DIR set but {self.vanguard_csv_path!r} does not "
+                "exist — Vanguard skipped until a CSV export is dropped there."
+            )
+        if self.coinbase_key_file and not Path(self.coinbase_key_file).exists():
+            warnings.append(
+                f"COINBASE_KEY_FILE {self.coinbase_key_file!r} does not exist — "
+                "Coinbase skipped."
+            )
+        enabled_sources = (
+            self.alpaca_enabled or self.evm_enabled
+            or self.vanguard_enabled or self.coinbase_enabled
+        )
+        if not enabled_sources:
             raise ConfigError(
-                "No sources enabled: configure Alpaca and/or an EVM wallet."
+                "No sources enabled: configure Alpaca, an EVM wallet, "
+                "VANGUARD_CSV_DIR, and/or a Coinbase key."
             )
         return warnings
 
@@ -257,8 +356,23 @@ class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
 
 
+def _parse_id_overrides(raw: str | None) -> dict[str, str]:
+    """Parse "SYM:coingecko-id,SYM2:id2" into {SYM: id} (symbols uppercased)."""
+    out: dict[str, str] = {}
+    for pair in (raw or "").split(","):
+        sym, _, cid = pair.partition(":")
+        if sym.strip() and cid.strip():
+            out[sym.strip().upper()] = cid.strip()
+    return out
+
+
 def load() -> Config:
     """Build a Config from the current environment."""
+    # CDP private keys are PEM; when stored inline in .env the newlines arrive
+    # as literal "\n" escapes — normalize them back.
+    coinbase_secret = _env("COINBASE_API_PRIVATE_KEY")
+    if coinbase_secret:
+        coinbase_secret = coinbase_secret.replace("\\n", "\n")
     return Config(
         database_url=_env("DATABASE_URL"),
         alpaca_api_key_id=_env("ALPACA_API_KEY_ID"),
@@ -269,6 +383,13 @@ def load() -> Config:
         token_allowlist=[a.lower() for a in _env_list("TOKEN_ALLOWLIST")],
         wallet_standard_address=_env("WALLET_STANDARD_ADDRESS"),
         wallet_01_address=_env("WALLET_01_ADDRESS"),
+        vanguard_csv_path=_env("VANGUARD_CSV_DIR"),
+        coinbase_key_file=_env("COINBASE_KEY_FILE"),
+        coinbase_api_key_name=_env("COINBASE_API_KEY_NAME"),
+        coinbase_api_private_key=coinbase_secret,
+        coinbase_coingecko_overrides=_parse_id_overrides(
+            _env("COINBASE_COINGECKO_IDS")
+        ),
         coingecko_api_key=_env("COINGECKO_API_KEY"),
         coingecko_pro=_env_bool("COINGECKO_PRO", False),
         telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
@@ -290,6 +411,8 @@ def _summary() -> str:
         f"  Alpaca enabled   : {s.alpaca_enabled}",
         f"  EVM enabled      : {s.evm_enabled} (alchemy={s.use_alchemy})",
         f"  Wallets          : {[w[0] for w in s.wallets] or 'none'}",
+        f"  Vanguard enabled : {s.vanguard_enabled} (csv={s.vanguard_csv_path or '—'})",
+        f"  Coinbase enabled : {s.coinbase_enabled}",
         f"  Telegram enabled : {s.telegram_enabled}",
         f"  Net-worth alert  : >{NETWORTH_ALERT_PCT}% AND >${NETWORTH_ALERT_USD}"
         f", cooldown {NETWORTH_ALERT_COOLDOWN_MIN}m",

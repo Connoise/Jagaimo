@@ -339,6 +339,16 @@ body {
   color: var(--info);
 }
 
+.pill-buy {
+  background: #0d2e16;
+  color: var(--accent);
+}
+
+.pill-sell {
+  background: #3a1210;
+  color: var(--danger);
+}
+
 /* Chips */
 .chip-list {
   display: flex;

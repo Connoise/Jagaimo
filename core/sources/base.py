@@ -28,7 +28,7 @@ class Holding:
     """
 
     source: str
-    asset_class: str           # 'equity'|'etf'|'crypto_spot'|'crypto_lp'|'cash'
+    asset_class: str           # 'equity'|'etf'|'fund'|'crypto_spot'|'crypto_lp'|'cash'
     symbol: str
     quantity: Decimal
     chain: str | None = None

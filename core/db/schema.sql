@@ -169,6 +169,44 @@ CREATE TABLE IF NOT EXISTS tracking.instrument_prefs (
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ── Trade ledger ─────────────────────────────────────────────────────────────
+
+-- Append-only record of trades/cash events imported from sources (Vanguard CSV
+-- transaction sections, Coinbase fills). This is a faithful historical record,
+-- NOT a cost-basis/PnL engine — holdings snapshots stay authoritative for
+-- "what I hold now"; the ledger is a parallel record of "what happened".
+-- Ingester-owned: the browser reads it but never writes it (RLS below).
+--
+-- Dedup: `natural_key` is deterministic per logical row (per-source recipe;
+-- Vanguard keys include an occurrence index so two identical same-day rows in
+-- one export both import, while overlapping re-exports never double-count).
+-- amount_usd is the signed net cash flow: negative = cash out (buys).
+CREATE TABLE IF NOT EXISTS tracking.transactions (
+    txn_id        BIGSERIAL PRIMARY KEY,
+    source        TEXT NOT NULL,             -- 'vanguard' | 'coinbase' | ...
+    account       TEXT,                      -- account number / portfolio id
+    instrument_id BIGINT REFERENCES tracking.instruments(instrument_id),
+    symbol        TEXT,                      -- as reported by the source
+    trade_ts      TIMESTAMPTZ NOT NULL,      -- CSV rows carry date precision (00:00 UTC)
+    settlement_ts TIMESTAMPTZ,
+    side          TEXT NOT NULL,             -- normalized; raw type kept in `kind`
+    kind          TEXT,                      -- source's transaction type, verbatim
+    quantity      NUMERIC(38,18),
+    price_usd     NUMERIC(38,18),
+    fees_usd      NUMERIC(38,18),
+    amount_usd    NUMERIC(38,18),            -- signed net amount (negative = cash out)
+    description   TEXT,
+    natural_key   TEXT NOT NULL UNIQUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT transactions_side_chk CHECK (side IN ('buy','sell','income','other'))
+);
+CREATE INDEX IF NOT EXISTS transactions_trade_ts_idx
+    ON tracking.transactions (trade_ts DESC);
+CREATE INDEX IF NOT EXISTS transactions_instrument_idx
+    ON tracking.transactions (instrument_id, trade_ts);
+CREATE INDEX IF NOT EXISTS transactions_source_idx
+    ON tracking.transactions (source, trade_ts);
+
 -- ── Alerter state ────────────────────────────────────────────────────────────
 
 -- Single-row state for the net-worth threshold alerter (decision §2.4).
@@ -208,7 +246,7 @@ DECLARE
     read_tables  TEXT[] := ARRAY[
         'instruments','holdings','net_worth','prices','ohlc_bars',
         'watchlist','instrument_groups','group_members','price_targets',
-        'watchlist_requests','instrument_prefs','alert_state'
+        'watchlist_requests','instrument_prefs','alert_state','transactions'
     ];
     write_tables TEXT[] := ARRAY[
         'watchlist','instrument_groups','group_members','price_targets',
